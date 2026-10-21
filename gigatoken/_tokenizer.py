@@ -200,6 +200,12 @@ class Tokenizer:
         return self._backend.merges
 
     def encode(self, input: str | bytes) -> npt.NDArray[np.uint32]:
+        """Encode with the GIL released during native work.
+
+        The scalar cache is exclusively borrowed until the call returns.
+        Overlapping access to this same backend raises RuntimeError; use
+        separate tokenizer instances for concurrent scalar calls.
+        """
         return self._backend.encode(input)
 
     def encode_batch(
