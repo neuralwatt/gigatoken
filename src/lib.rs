@@ -100,7 +100,8 @@ impl BPETokenizer {
     }
 
     /// Encode a single document (str or bytes) with the main tokenizer,
-    /// whose pretoken cache persists across calls.
+    /// whose pretoken cache persists across calls. Native encoding releases
+    /// the GIL; PyO3 retains the exclusive borrow of this instance's cache.
     fn encode<'py>(
         &mut self,
         py: Python<'py>,
@@ -108,7 +109,7 @@ impl BPETokenizer {
     ) -> PyResult<Bound<'py, PyArray1<u32>>> {
         let input = extract_doc(&input)?;
         let (mut ids, mut lens) = (Vec::new(), Vec::new());
-        encode_into(&mut self.tokenizer, input.as_bytes(), &mut ids, &mut lens);
+        py.detach(|| encode_into(&mut self.tokenizer, input.as_bytes(), &mut ids, &mut lens));
         Ok(ids.into_pyarray(py))
     }
 
@@ -410,7 +411,8 @@ impl SentencePieceTokenizer {
     }
 
     /// Encode a single document (str or UTF-8 bytes), with a pretoken cache
-    /// that persists across calls.
+    /// that persists across calls. Native encoding releases the GIL while
+    /// PyO3 retains the exclusive borrow of the cache and scratch state.
     fn encode<'py>(
         &mut self,
         py: Python<'py>,
@@ -427,10 +429,12 @@ impl SentencePieceTokenizer {
             }
         };
         let mut ids: Vec<u32> = Vec::new();
-        self.tokenizer
-            .encode_raw_cb(&mut self.state, text, &mut |tokens| {
-                ids.extend(tokens.iter().map(|&t| u32::from(t)))
-            });
+        py.detach(|| {
+            self.tokenizer
+                .encode_raw_cb(&mut self.state, text, &mut |tokens| {
+                    ids.extend(tokens.iter().map(|&t| u32::from(t)))
+                });
+        });
         Ok(ids.into_pyarray(py))
     }
 
@@ -481,10 +485,12 @@ impl SentencePieceTokenizer {
         input: &str,
     ) -> PyResult<Bound<'py, PyArray1<u32>>> {
         let mut ids: Vec<u32> = Vec::new();
-        self.tokenizer
-            .encode_normalized_cb(&mut self.state, input, &mut |tokens| {
-                ids.extend(tokens.iter().map(|&t| u32::from(t)))
-            });
+        py.detach(|| {
+            self.tokenizer
+                .encode_normalized_cb(&mut self.state, input, &mut |tokens| {
+                    ids.extend(tokens.iter().map(|&t| u32::from(t)))
+                });
+        });
         Ok(ids.into_pyarray(py))
     }
 
